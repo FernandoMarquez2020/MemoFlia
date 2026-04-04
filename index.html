@@ -22,7 +22,7 @@
       padding:14px 8px 28px;
       position:relative; overflow-x:hidden;
       /* transition suave del fondo */
-      background: radial-gradient(ellipse at 50% 0%, rgba(0,207,255,0.18) 0%, #050510 55%);
+      background: radial-gradient(ellipse at 50% 100%, rgba(0,207,255,0.30) 0%, #050510 55%);
       transition: background 0.8s ease;
     }
 
@@ -279,11 +279,11 @@ function setTheme(p) {
   body.classList.add('turn-p'+p);
 
   if(p===1) {
-    body.style.background = 'radial-gradient(ellipse at 50% 0%, rgba(0,207,255,0.22) 0%, #050510 55%)';
+    body.style.background = 'radial-gradient(ellipse at 50% 100%, rgba(0,207,255,0.35) 0%, #050510 55%)';
     document.getElementById('card-p1').classList.add('active');
     document.getElementById('card-p2').classList.remove('active');
   } else {
-    body.style.background = 'radial-gradient(ellipse at 50% 0%, rgba(255,51,102,0.22) 0%, #050510 55%)';
+    body.style.background = 'radial-gradient(ellipse at 50% 100%, rgba(255,51,102,0.35) 0%, #050510 55%)';
     document.getElementById('card-p2').classList.add('active');
     document.getElementById('card-p1').classList.remove('active');
   }
