@@ -3,61 +3,70 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Memorama Familiar — 2 Jugadores</title>
+  <title>FliaMarquezMorales — Memorama 2 Jugadores</title>
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet"/>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
     :root {
-      --p1: #00cfff;
-      --p1g: rgba(0,207,255,0.55);
-      --p2: #ff3366;
-      --p2g: rgba(255,51,102,0.55);
-      --bg: #050510;
-      --dim: #8888aa;
+      --p1:#00cfff;
+      --p1g:rgba(0,207,255,0.55);
+      --p2:#ff3366;
+      --p2g:rgba(255,51,102,0.55);
+      --dim:#8888aa;
     }
+
     body {
-      min-height: 100vh;
-      background: var(--bg);
-      font-family: 'Orbitron', sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 14px 8px 28px;
-      position: relative;
-      overflow-x: hidden;
-      transition: background 0.7s ease;
+      min-height:100vh;
+      font-family:'Orbitron',sans-serif;
+      display:flex; flex-direction:column; align-items:center;
+      padding:14px 8px 28px;
+      position:relative; overflow-x:hidden;
+      /* transition suave del fondo */
+      background: radial-gradient(ellipse at 50% 0%, rgba(0,207,255,0.18) 0%, #050510 55%);
+      transition: background 0.8s ease;
     }
-    /* Subtle scanlines */
+
+    /* Scanlines retro */
     body::before {
-      content: '';
-      position: fixed; inset: 0;
-      background: repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.08) 3px,rgba(0,0,0,0.08) 4px);
-      pointer-events: none; z-index: 999;
+      content:''; position:fixed; inset:0;
+      background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.08) 3px,rgba(0,0,0,0.08) 4px);
+      pointer-events:none; z-index:999;
     }
-    /* Neon grid */
+    /* Grid neon */
     body::after {
-      content: '';
-      position: fixed; inset: 0;
+      content:''; position:fixed; inset:0;
       background-image:
-        linear-gradient(rgba(0,207,255,0.03) 1px,transparent 1px),
-        linear-gradient(90deg,rgba(0,207,255,0.03) 1px,transparent 1px);
-      background-size: 44px 44px;
-      animation: gs 20s linear infinite; z-index: 0;
+        linear-gradient(rgba(255,255,255,0.025) 1px,transparent 1px),
+        linear-gradient(90deg,rgba(255,255,255,0.025) 1px,transparent 1px);
+      background-size:44px 44px;
+      animation:gs 20s linear infinite; z-index:0;
     }
     @keyframes gs { 0%{background-position:0 0} 100%{background-position:44px 44px} }
 
     .wrapper { position:relative; z-index:1; width:100%; max-width:920px; }
 
+    /* ── TÍTULO ── */
     header { text-align:center; margin-bottom:10px; }
     .game-title {
       font-family:'Press Start 2P',monospace;
-      font-size:clamp(0.75rem,2.2vw,1.2rem);
-      color:#fff;
-      text-shadow:0 0 14px var(--p1), 0 0 28px var(--p1);
-      letter-spacing:2px; line-height:1.9;
+      font-size:clamp(0.65rem,2vw,1.05rem);
+      letter-spacing:2px; line-height:2;
+      transition: color 0.8s, text-shadow 0.8s;
     }
-    .game-title span { color:var(--p2); text-shadow:0 0 14px var(--p2), 0 0 28px var(--p2); }
+    body.turn-p1 .game-title {
+      color:#fff;
+      text-shadow:0 0 14px var(--p1), 0 0 30px var(--p1);
+    }
+    body.turn-p2 .game-title {
+      color:#fff;
+      text-shadow:0 0 14px var(--p2), 0 0 30px var(--p2);
+    }
+    .game-title .sub {
+      font-size:clamp(0.45rem,1.2vw,0.65rem);
+      opacity:0.6; letter-spacing:4px;
+    }
 
+    /* ── JUGADORES ── */
     .players { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:10px 0; }
     .player-card {
       border-radius:12px; padding:10px 14px;
@@ -65,21 +74,21 @@
       background:rgba(255,255,255,0.04);
       backdrop-filter:blur(6px);
       position:relative; overflow:hidden;
-      transition:border-color 0.4s, box-shadow 0.4s;
+      transition:border-color 0.5s, box-shadow 0.5s;
     }
     .player-card.p1 { border-color:rgba(0,207,255,0.2); }
     .player-card.p1.active {
       border-color:var(--p1);
-      box-shadow:0 0 22px var(--p1g), inset 0 0 16px rgba(0,207,255,0.06);
+      box-shadow:0 0 24px var(--p1g), inset 0 0 18px rgba(0,207,255,0.07);
     }
     .player-card.p2 { border-color:rgba(255,51,102,0.2); }
     .player-card.p2.active {
       border-color:var(--p2);
-      box-shadow:0 0 22px var(--p2g), inset 0 0 16px rgba(255,51,102,0.06);
+      box-shadow:0 0 24px var(--p2g), inset 0 0 18px rgba(255,51,102,0.07);
     }
     .player-label {
       font-family:'Press Start 2P',monospace;
-      font-size:clamp(0.45rem,1.3vw,0.65rem);
+      font-size:clamp(0.42rem,1.2vw,0.62rem);
       letter-spacing:1px; margin-bottom:4px;
     }
     .p1 .player-label { color:var(--p1); text-shadow:0 0 6px var(--p1); }
@@ -87,7 +96,7 @@
     .player-score { font-size:clamp(1.6rem,4vw,2.4rem); font-weight:900; line-height:1; }
     .p1 .player-score { color:var(--p1); text-shadow:0 0 8px var(--p1); }
     .p2 .player-score { color:var(--p2); text-shadow:0 0 8px var(--p2); }
-    .player-sub { font-size:0.58rem; color:var(--dim); margin-top:2px; }
+    .player-sub { font-size:0.55rem; color:var(--dim); margin-top:2px; }
     .turn-arrow {
       font-size:1.1rem; position:absolute; right:10px; top:50%;
       transform:translateY(-50%); opacity:0; transition:opacity 0.3s;
@@ -95,64 +104,63 @@
     .active .turn-arrow { opacity:1; animation:blk 0.7s ease-in-out infinite alternate; }
     @keyframes blk { from{opacity:0.3} to{opacity:1} }
 
-    .statsbar { display:flex; justify-content:center; gap:16px; margin-bottom:10px; flex-wrap:wrap; }
-    .stat { background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:5px 14px; text-align:center; }
-    .stat-label { font-size:0.5rem; color:var(--dim); letter-spacing:2px; text-transform:uppercase; }
+    /* ── STATS ── */
+    .statsbar { display:flex; justify-content:center; gap:14px; margin-bottom:10px; flex-wrap:wrap; }
+    .stat {
+      background:rgba(255,255,255,0.04);
+      border:1px solid rgba(255,255,255,0.1);
+      border-radius:8px; padding:5px 14px; text-align:center;
+    }
+    .stat-label { font-size:0.48rem; color:var(--dim); letter-spacing:2px; text-transform:uppercase; }
     .stat-value { font-size:1rem; font-weight:700; color:#fff; }
 
-    .controls { display:flex; justify-content:center; gap:10px; margin-bottom:12px; }
+    .controls { display:flex; justify-content:center; margin-bottom:12px; }
     .btn {
-      padding:8px 20px; border-radius:8px; border:1px solid rgba(255,255,255,0.15);
+      padding:8px 20px; border-radius:8px;
+      border:1px solid rgba(255,255,255,0.15);
       background:rgba(255,255,255,0.06); color:#fff;
-      font-family:'Orbitron',sans-serif; font-size:0.7rem; font-weight:700;
-      letter-spacing:2px; cursor:pointer; text-transform:uppercase;
-      transition:transform 0.15s, box-shadow 0.15s;
+      font-family:'Orbitron',sans-serif; font-size:0.7rem;
+      font-weight:700; letter-spacing:2px; cursor:pointer;
+      text-transform:uppercase; transition:transform 0.15s, box-shadow 0.15s;
     }
     .btn:hover { transform:translateY(-2px); box-shadow:0 0 14px rgba(255,255,255,0.15); }
 
     /* ── GRID ── */
     .grid { display:grid; grid-template-columns:repeat(6,1fr); gap:6px; }
-
     .card {
       aspect-ratio:3/4; position:relative; cursor:pointer;
       transform-style:preserve-3d;
       transition:transform 0.38s cubic-bezier(0.4,0,0.2,1);
       border-radius:8px;
     }
-    .card.flipped  { transform:rotateY(180deg); }
-    .card.matched  { transform:rotateY(180deg); cursor:default; }
-    .card.wrong    { animation:wsh 0.4s ease; }
+    .card.flipped { transform:rotateY(180deg); }
+    .card.matched { transform:rotateY(180deg); cursor:default; }
+    .card.wrong   { animation:wsh 0.4s ease; }
     @keyframes wsh {
-      0%,100% { transform:rotateY(180deg); }
-      25%     { transform:rotateY(180deg) translateX(-5px); }
-      75%     { transform:rotateY(180deg) translateX(5px); }
+      0%,100%{ transform:rotateY(180deg); }
+      25%    { transform:rotateY(180deg) translateX(-5px); }
+      75%    { transform:rotateY(180deg) translateX(5px); }
     }
-
     .card-face { position:absolute; inset:0; border-radius:8px; backface-visibility:hidden; overflow:hidden; }
-
     .card-back {
       background:linear-gradient(145deg,#08081e,#10103a);
-      border:1.5px solid rgba(0,207,255,0.18);
+      border:1.5px solid rgba(255,255,255,0.12);
       display:flex; align-items:center; justify-content:center;
       font-family:'Press Start 2P',monospace;
-      font-size:clamp(0.3rem,1vw,0.52rem);
-      color:rgba(0,207,255,0.4); text-align:center; line-height:1.7; padding:4px;
+      font-size:clamp(0.28rem,0.9vw,0.48rem);
+      color:rgba(255,255,255,0.25); text-align:center; line-height:1.7; padding:4px;
     }
     .card-back::after {
       content:''; position:absolute; inset:4px;
-      border:1px solid rgba(0,207,255,0.1); border-radius:4px;
-      background:repeating-linear-gradient(45deg,transparent,transparent 5px,rgba(0,207,255,0.025) 5px,rgba(0,207,255,0.025) 10px);
+      border:1px solid rgba(255,255,255,0.07); border-radius:4px;
+      background:repeating-linear-gradient(45deg,transparent,transparent 5px,rgba(255,255,255,0.02) 5px,rgba(255,255,255,0.02) 10px);
     }
-
-    /* No filters on front — pure crisp image */
-    .card-front { transform:rotateY(180deg); border:1.5px solid rgba(255,255,255,0.12); }
-    .card-front img { width:100%; height:100%; object-fit:cover; display:block; image-rendering:auto; }
-
-    /* Matched border only — no blur/filter */
+    .card-front { transform:rotateY(180deg); border:1.5px solid rgba(255,255,255,0.1); }
+    .card-front img { width:100%; height:100%; object-fit:cover; display:block; }
     .card.matched.by-p1 .card-front { outline:2px solid var(--p1); box-shadow:0 0 10px var(--p1g); }
     .card.matched.by-p2 .card-front { outline:2px solid var(--p2); box-shadow:0 0 10px var(--p2g); }
 
-    /* WIN OVERLAY */
+    /* ── WIN OVERLAY ── */
     .overlay {
       display:none; position:fixed; inset:0;
       background:rgba(0,0,0,0.92); z-index:200;
@@ -169,7 +177,7 @@
     }
     .win-title.p1w { color:var(--p1); text-shadow:0 0 28px var(--p1); }
     .win-title.p2w { color:var(--p2); text-shadow:0 0 28px var(--p2); }
-    .win-title.tie { color:#ffe600; text-shadow:0 0 28px #ffe600; }
+    .win-title.tie  { color:#ffe600; text-shadow:0 0 28px #ffe600; }
     @keyframes gp { from{filter:brightness(0.8)} to{filter:brightness(1.4)} }
     .win-scores { display:flex; gap:32px; justify-content:center; margin:14px 0 16px; }
     .ws { text-align:center; }
@@ -179,13 +187,16 @@
     .ws-val.c2 { color:var(--p2); }
     .win-detail { color:#888; font-size:0.75rem; margin-bottom:22px; }
 
-    @media (max-width:500px) { .grid{gap:4px;} .players{gap:6px;} }
+    @media(max-width:500px) { .grid{gap:4px;} .players{gap:6px;} }
   </style>
 </head>
-<body>
+<body class="turn-p1">
 <div class="wrapper">
   <header>
-    <div class="game-title">MEMO<span>RAMA</span><br>FAMILIAR</div>
+    <div class="game-title">
+      FliaMarquezMorales<br>
+      <span class="sub">MEMORAMA · 2 JUGADORES</span>
+    </div>
   </header>
 
   <div class="players">
@@ -263,12 +274,16 @@ function startTimer() {
 function stopTimer() { clearInterval(tiv); }
 
 function setTheme(p) {
+  const body = document.body;
+  body.classList.remove('turn-p1','turn-p2');
+  body.classList.add('turn-p'+p);
+
   if(p===1) {
-    document.body.style.background='linear-gradient(160deg,#020a18 0%,#050510 60%,#020a18 100%)';
+    body.style.background = 'radial-gradient(ellipse at 50% 0%, rgba(0,207,255,0.22) 0%, #050510 55%)';
     document.getElementById('card-p1').classList.add('active');
     document.getElementById('card-p2').classList.remove('active');
   } else {
-    document.body.style.background='linear-gradient(160deg,#180208 0%,#100508 60%,#180208 100%)';
+    body.style.background = 'radial-gradient(ellipse at 50% 0%, rgba(255,51,102,0.22) 0%, #050510 55%)';
     document.getElementById('card-p2').classList.add('active');
     document.getElementById('card-p1').classList.remove('active');
   }
@@ -286,7 +301,7 @@ function buildGrid() {
   deck.forEach(item=>{
     const c=document.createElement('div');
     c.className='card'; c.dataset.id=item.id;
-    c.innerHTML=`<div class="card-face card-back">MEMO<br>RAMA</div><div class="card-face card-front"><img src="${item.src}" loading="lazy"/></div>`;
+    c.innerHTML=`<div class="card-face card-back">FLIA<br>MQZ</div><div class="card-face card-front"><img src="${item.src}" loading="lazy"/></div>`;
     c.addEventListener('click',onCardClick);
     grid.appendChild(c);
   });
@@ -312,6 +327,7 @@ function checkMatch() {
       document.getElementById('remaining').textContent=18-matched;
       flipped=[]; locked=false;
       if(matched===18) setTimeout(showWin,500);
+      // Mismo jugador sigue — fondo no cambia
     },300);
   } else {
     a.classList.add('wrong'); b.classList.add('wrong');
@@ -319,7 +335,7 @@ function checkMatch() {
       a.classList.remove('flipped','wrong'); b.classList.remove('flipped','wrong');
       flipped=[]; locked=false;
       cp=cp===1?2:1;
-      setTheme(cp);
+      setTheme(cp);  // 🎨 Fondo cambia al turno del otro jugador
     },950);
   }
 }
