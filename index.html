@@ -585,6 +585,7 @@ function launchOnlineGame() {
 
   cp=1; scores=[0,0]; moves=0; matched=0;
   secs=0; started=false; flipped=[]; locked=false;
+  prevCardState = {};
   document.getElementById('score-p1').textContent='0';
   document.getElementById('score-p2').textContent='0';
   document.getElementById('moves').textContent='0';
@@ -609,56 +610,80 @@ function launchOnlineGame() {
   });
 }
 
+// Estado anterior de cartas para detectar cambios
+let prevCardState = {};
+
 function syncState(r) {
-  // Actualizar marcador
+  // ── Marcadores ──
   if(r.scores) {
     scores = r.scores;
-    document.getElementById('score-p1').textContent=scores[0];
-    document.getElementById('score-p2').textContent=scores[1];
+    document.getElementById('score-p1').textContent = scores[0];
+    document.getElementById('score-p2').textContent = scores[1];
   }
-  if(r.moves!==undefined) { moves=r.moves; document.getElementById('moves').textContent=moves; }
-  if(r.matched!==undefined) { matched=r.matched; document.getElementById('remaining').textContent=totalPairs-matched; }
+  if(r.moves !== undefined) { moves = r.moves; document.getElementById('moves').textContent = moves; }
+  if(r.matched !== undefined) { matched = r.matched; document.getElementById('remaining').textContent = totalPairs - matched; }
 
-  // Turno
-  if(r.cp && r.cp!==cp) { cp=r.cp; setTheme(cp); }
+  // ── Turno ──
+  const newCp = r.cp || 1;
+  if(newCp !== cp) { cp = newCp; setTheme(cp); }
 
-  // Cartas
-  if(r.cards) {
-    const allCards = document.querySelectorAll('.card');
-    const opponentPlaying = (r.cp !== myPlayer);
-
-    Object.entries(r.cards).forEach(([idx, state]) => {
-      const card = allCards[parseInt(idx)];
-      if(!card) return;
-
-      if(state.matched) {
-        // Pareja encontrada: siempre visible permanentemente
+  // ── Cartas: solo el OPONENTE necesita sincronizar visualmente ──
+  // El jugador activo ya manejó sus cartas localmente
+  if(cp === myPlayer) {
+    // Es mi turno: solo sincronizo las parejas encontradas
+    if(r.cards) {
+      const allCards = document.querySelectorAll('.card');
+      Object.entries(r.cards).forEach(([idx, state]) => {
+        const card = allCards[parseInt(idx)];
+        if(!card || !state.matched) return;
         card.classList.add('flipped','matched','by-p'+state.by);
         card.classList.remove('wrong');
-      } else if(state.flipped) {
-        // Carta volteada: mostrarla brevemente
-        card.classList.add('flipped');
-        card.classList.remove('wrong');
-        // Si es el oponente jugando, ocultarla después de 850ms si no fue emparejada
-        if(opponentPlaying) {
-          setTimeout(() => {
-            if(!card.classList.contains('matched')) {
-              card.classList.remove('flipped','wrong');
-            }
-          }, 850);
-        }
-      } else {
-        card.classList.remove('flipped','wrong');
-      }
-    });
+      });
+    }
+    locked = false;
+    document.querySelectorAll('.card:not(.matched)').forEach(c => c.classList.remove('blocked'));
+    return;
   }
 
-  // Desbloquear si es mi turno
-  const myTurn = (cp===myPlayer);
-  locked = !myTurn;
-  document.querySelectorAll('.card:not(.matched)').forEach(c => {
-    c.classList.toggle('blocked', !myTurn);
+  // ── Es turno del oponente: sincronizo TODO ──
+  locked = true;
+  const allCards = document.querySelectorAll('.card');
+  const currentCards = r.cards || {};
+
+  // Detectar cartas que ACABAN de voltearse (nuevas en Firebase)
+  Object.entries(currentCards).forEach(([idx, state]) => {
+    const card = allCards[parseInt(idx)];
+    if(!card) return;
+    const prev = prevCardState[idx];
+
+    if(state.matched) {
+      // Pareja: mostrar permanente
+      card.classList.add('flipped','matched','by-p'+state.by);
+      card.classList.remove('wrong');
+    } else if(state.flipped && !card.classList.contains('flipped')) {
+      // Carta recién volteada por oponente: mostrar
+      card.classList.add('flipped');
+      card.classList.remove('wrong','matched');
+    }
   });
+
+  // Detectar cartas que DESAPARECIERON de Firebase (oponente falló)
+  Object.keys(prevCardState).forEach(idx => {
+    if(!currentCards[idx] && !prevCardState[idx]?.matched) {
+      const card = allCards[parseInt(idx)];
+      if(card && !card.classList.contains('matched')) {
+        // Animar el volteo de vuelta
+        card.classList.add('wrong');
+        setTimeout(() => {
+          card.classList.remove('flipped','wrong');
+        }, 400);
+      }
+    }
+  });
+
+  prevCardState = JSON.parse(JSON.stringify(currentCards));
+
+  document.querySelectorAll('.card:not(.matched)').forEach(c => c.classList.add('blocked'));
 }
 
 // ── LANZAR JUEGO LOCAL ──
