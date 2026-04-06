@@ -863,27 +863,37 @@ selDiff('easy');
 selOnline('create');
 
 // ── AUTO-JOIN: detectar ?sala=XXXX en la URL ──
-(async function() {
-  const params = new URLSearchParams(window.location.search);
-  const salaCode = params.get('sala');
-  if(salaCode && salaCode.length === 4) {
-    // Mostrar pantalla de carga
-    showScreen('waitScreen');
-    document.getElementById('roomCodeDisplay').textContent = salaCode.toUpperCase();
-    document.getElementById('waitStatus').textContent = '🔗 Uniéndose a la sala...';
-    document.getElementById('waShareBtn').style.display = 'none';
+// Leer el código ANTES de cualquier async
+const _autoSala = new URLSearchParams(window.location.search).get('sala');
 
-    // Pequeña pausa para que Firebase se inicialice
-    await new Promise(r => setTimeout(r, 800));
+if(_autoSala && _autoSala.length === 4) {
+  const code = _autoSala.toUpperCase();
 
+  // Mostrar pantalla de espera inmediatamente
+  showScreen('waitScreen');
+  document.getElementById('roomCodeDisplay').textContent = code;
+  document.getElementById('waitStatus').textContent = '🔗 Uniéndose a la sala...';
+  document.getElementById('waShareBtn').style.display = 'none';
+
+  // Esperar que Firebase esté listo e intentar unirse
+  async function tryJoin(attempts) {
     try {
-      await joinRoom(salaCode.toUpperCase());
+      await joinRoom(code);
+      // Limpiar la URL sin recargar la página
+      window.history.replaceState({}, '', window.location.pathname);
     } catch(e) {
-      document.getElementById('waitStatus').textContent = '❌ No se pudo unir. La sala puede haber expirado.';
-      setTimeout(() => showScreen('homeScreen'), 2500);
+      if(attempts > 0) {
+        setTimeout(() => tryJoin(attempts - 1), 600);
+      } else {
+        document.getElementById('waitStatus').textContent = '❌ Sala no encontrada o expirada.';
+        setTimeout(() => showScreen('homeScreen'), 2500);
+      }
     }
   }
-})();
+
+  // Dar tiempo a Firebase para inicializarse completamente
+  setTimeout(() => tryJoin(5), 1200);
+}
 </script>
 </body>
 </html>
