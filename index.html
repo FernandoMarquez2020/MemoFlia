@@ -531,12 +531,11 @@ async function createRoom() {
   document.getElementById('waitStatus').textContent = '⏳ Esperando al Jugador 2...';
   showScreen('waitScreen');
   // Generar enlace WhatsApp
-  const gameUrl = 'https://fernandomarquez2020.github.io/MemoFlia/';
+  const gameUrl = 'https://fernandomarquez2020.github.io/MemoFlia/?sala=' + code;
   const waMsg = encodeURIComponent(
     '🎴 *¡Te desafío al Memorama FliaMarquezMorales!* 🎴\n\n' +
-    '👉 Entrá al juego: ' + gameUrl + '\n\n' +
-    '🕹️ Elegí modo *🌐 ONLINE* → *UNIRSE*\n' +
-    '🔑 Código de sala: *' + code + '*\n\n' +
+    '👇 Tocá el link y entrá directo a la partida:\n' +
+    gameUrl + '\n\n' +
     '¿Te animás? 😏🔥'
   );
   document.getElementById('waShareBtn').href = 'https://wa.me/?text=' + waMsg;
@@ -862,6 +861,29 @@ window.restartGame = function() {
 selMode('1p');
 selDiff('easy');
 selOnline('create');
+
+// ── AUTO-JOIN: detectar ?sala=XXXX en la URL ──
+(async function() {
+  const params = new URLSearchParams(window.location.search);
+  const salaCode = params.get('sala');
+  if(salaCode && salaCode.length === 4) {
+    // Mostrar pantalla de carga
+    showScreen('waitScreen');
+    document.getElementById('roomCodeDisplay').textContent = salaCode.toUpperCase();
+    document.getElementById('waitStatus').textContent = '🔗 Uniéndose a la sala...';
+    document.getElementById('waShareBtn').style.display = 'none';
+
+    // Pequeña pausa para que Firebase se inicialice
+    await new Promise(r => setTimeout(r, 800));
+
+    try {
+      await joinRoom(salaCode.toUpperCase());
+    } catch(e) {
+      document.getElementById('waitStatus').textContent = '❌ No se pudo unir. La sala puede haber expirado.';
+      setTimeout(() => showScreen('homeScreen'), 2500);
+    }
+  }
+})();
 </script>
 </body>
 </html>
