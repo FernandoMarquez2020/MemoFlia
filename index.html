@@ -342,6 +342,19 @@
   </div>
 </div>
 
+<!-- Footer -->
+<footer style="
+  position:relative; z-index:1;
+  text-align:center; margin-top:28px;
+  font-family:'Press Start 2P',monospace;
+  font-size:clamp(0.3rem,0.9vw,0.45rem);
+  color:rgba(255,255,255,0.2);
+  letter-spacing:2px; line-height:2;
+">
+  CREATED BY<br>
+  <span style="color:rgba(0,207,255,0.4);">FERNANDO MARQUEZ</span>
+</footer>
+
 <!-- Firebase -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
@@ -411,12 +424,14 @@ window.showScreen = showScreen;
 // ── SELECCIÓN MODO ──
 window.selMode = function(m) {
   mode = m;
-  ['1p','2p','online'].forEach(x => {
-    document.getElementById('btn'+x==='1p'?'1p':x==='2p'?'2p':'Online').classList.remove('sel-white','sel-blue');
-  });
-  document.getElementById('btn1p').classList.toggle('sel-white', m==='1p');
-  document.getElementById('btn2p').classList.toggle('sel-white', m==='2p');
-  document.getElementById('btnOnline').classList.toggle('sel-blue', m==='online');
+  // Limpiar todos
+  document.getElementById('btn1p').classList.remove('sel-white','sel-blue');
+  document.getElementById('btn2p').classList.remove('sel-white','sel-blue');
+  document.getElementById('btnOnline').classList.remove('sel-white','sel-blue');
+  // Pintar el seleccionado
+  if(m==='1p')     document.getElementById('btn1p').classList.add('sel-white');
+  else if(m==='2p')document.getElementById('btn2p').classList.add('sel-white');
+  else             document.getElementById('btnOnline').classList.add('sel-blue');
 };
 
 window.selDiff = function(d) {
