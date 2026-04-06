@@ -580,16 +580,29 @@ function syncState(r) {
 
   // Cartas
   if(r.cards) {
-    Object.entries(r.cards).forEach(([idx,state]) => {
-      const cards = document.querySelectorAll('.card');
-      const card = cards[parseInt(idx)];
+    const allCards = document.querySelectorAll('.card');
+    const opponentPlaying = (r.cp !== myPlayer);
+
+    Object.entries(r.cards).forEach(([idx, state]) => {
+      const card = allCards[parseInt(idx)];
       if(!card) return;
+
       if(state.matched) {
+        // Pareja encontrada: siempre visible permanentemente
         card.classList.add('flipped','matched','by-p'+state.by);
         card.classList.remove('wrong');
       } else if(state.flipped) {
+        // Carta volteada: mostrarla brevemente
         card.classList.add('flipped');
         card.classList.remove('wrong');
+        // Si es el oponente jugando, ocultarla después de 850ms si no fue emparejada
+        if(opponentPlaying) {
+          setTimeout(() => {
+            if(!card.classList.contains('matched')) {
+              card.classList.remove('flipped','wrong');
+            }
+          }, 850);
+        }
       } else {
         card.classList.remove('flipped','wrong');
       }
