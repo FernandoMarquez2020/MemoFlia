@@ -395,16 +395,13 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-// Helpers Firebase
-function dbSet(path, val){ return db.ref(path).set(val); }
-function dbUpdate(updates){ return db.ref().update(updates); }
-function dbGet(path){ return db.ref(path).get(); }
-function dbOn(path, cb){
-  const r=db.ref(path);
-  r.on('value', snap=>cb(snap));
-  return ()=>r.off('value');
-}
-function dbRemove(path){ return db.ref(path).remove(); }
+// Firebase helpers
+const dbRef = path => db.ref(path);
+const dbSet = (path, val) => db.ref(path).set(val);
+const dbUpdate = updates => db.ref().update(updates);
+const dbGet = path => db.ref(path).get();
+const dbOn = (path, cb) => { db.ref(path).on('value', cb); return () => db.ref(path).off('value'); };
+const dbRemove = path => db.ref(path).remove();
 
 // Imágenes
 const IMAGES = [
@@ -437,11 +434,33 @@ let unsubOnline=null, processing=false, currentCp=1;
 let localFlipped=[], localLocked=false, localCp=1, localScores=[0,0], localMatched=0;
 let timerSecs=0, timerOn=false, timerIv=null;
 
-const pad=n=>String(n).padStart(2,'0');
-const fmt=s=>Math.floor(s/60)+':'+pad(s%60);
-function startTimer(){ if(timerOn)return; timerOn=true; timerIv=setInterval(()=>{timerSecs++; document.getElementById('timer').textContent=fmt(timerSecs);},1000); }
+const pad = n => String(n).padStart(2,'0');
+const fmt = s => Math.floor(s/60)+':'+pad(s%60);
+function startTimer(){ if(timerOn)return; timerOn=true; timerIv=setInterval(()=>{ timerSecs++; document.getElementById('timer').textContent=fmt(timerSecs); },1000); }
 function stopTimer(){ clearInterval(timerIv); timerIv=null; }
 function resetTimer(){ stopTimer(); timerSecs=0; timerOn=false; document.getElementById('timer').textContent='0:00'; }
+
+// ══════════════════════════════════════════════
+// ESTADO DE CARTAS COMO STRING
+// Formato: "pos:imgId:estado:jugador" separado por "|"
+// estado: 1=volteada activa, 2=emparejada
+// ══════════════════════════════════════════════
+function parseCards(str){
+  // Devuelve objeto {pos: {id, state, by}}
+  const result = {};
+  if(!str) return result;
+  str.split('|').forEach(entry => {
+    if(!entry) return;
+    const [pos, id, state, by] = entry.split(':');
+    if(pos !== undefined) result[pos] = {id, state:parseInt(state), by:parseInt(by)};
+  });
+  return result;
+}
+
+function serializeCards(obj){
+  // Convierte objeto a string
+  return Object.entries(obj).map(([pos,s]) => pos+':'+s.id+':'+s.state+':'+s.by).join('|');
+}
 
 // ══════════════════════════════════════════════
 // PANTALLAS
@@ -546,28 +565,29 @@ async function createRoom(){
   let code=''; for(let i=0;i<4;i++) code+=chars[Math.floor(Math.random()*chars.length)];
   roomCode=code; onlineRole='host'; myPlayer=1;
 
-  // Generar mazo y guardarlo en Firebase como STRING para evitar problemas de array
+  // Deck como string "3,7,1,..." — strings no se convierten a array
   const pool=shuffle([...Array(18).keys()]).slice(0,totalPairs);
-  const deckArr=shuffle(pool.flatMap(i=>[i,i]));
-  const deckStr=deckArr.join(','); // guardar como string "3,7,1,3,7,1..."
+  const deckStr=shuffle(pool.flatMap(i=>[i,i])).join(',');
 
   await dbSet('rooms/'+code, {
-    status:'waiting', diff, totalPairs,
-    deck: deckStr,   // STRING
-    cp:1,
-    s0:0, s1:0,      // scores como campos separados, no array
-    moves:0, matched:0,
-    cards:''         // string vacío (no objeto, no array)
+    status: 'waiting',
+    diff, totalPairs,
+    deck: deckStr,
+    cp: 1,
+    sc0: 0, sc1: 0,
+    moves: 0,
+    matched: 0,
+    cards: ''   // string vacío — se irá llenando con "pos:id:state:by|..."
   });
 
   document.getElementById('roomCodeDisplay').textContent=code;
   document.getElementById('waitStatus').textContent='⏳ Esperando al Jugador 2...';
   const gameUrl='https://fernandomarquez2020.github.io/MemoFlia/?sala='+code;
-  const waMsg=encodeURIComponent('🎴 *¡Te desafío al Memorama FliaMarquezMorales!* 🎴\n\n👇 Tocá el link y entrá directo:\n'+gameUrl+'\n\n¿Te animás? 😏🔥');
+  const waMsg=encodeURIComponent('🎴 *¡Te desafío al Memorama FliaMarquezMorales!* 🎴\n\n👇 Tocá el link:\n'+gameUrl+'\n\n¿Te animás? 😏🔥');
   document.getElementById('waShareBtn').href='https://wa.me/?text='+waMsg;
   showScreen('waitScreen');
 
-  const unsub=dbOn('rooms/'+code+'/status',snap=>{
+  const unsub=dbOn('rooms/'+code+'/status', snap=>{
     if(snap.val()==='playing'){ unsub(); launchOnlineGame(); }
   });
 }
@@ -579,7 +599,7 @@ async function joinRoom(code){
   if(r.status!=='waiting'){alert('La sala ya está en juego');return;}
   roomCode=code; onlineRole='guest'; myPlayer=2;
   diff=r.diff; totalPairs=r.totalPairs;
-  await db.ref('rooms/'+code).update({status:'playing',guest:true});
+  await db.ref('rooms/'+code).update({status:'playing'});
   launchOnlineGame();
 }
 
@@ -600,86 +620,72 @@ function launchOnlineGame(){
   document.getElementById('score-p1').textContent='0';
   document.getElementById('score-p2').textContent='0';
   document.getElementById('moves').textContent='0';
-  document.getElementById('remaining').textContent=totalPairs;
   resetTimer();
   showScreen('game');
   setTheme(1);
 
-  // Leer el mazo de Firebase y construir el grid ANTES de escuchar
+  // Leer sala y construir grid
   dbGet('rooms/'+roomCode).then(snap=>{
     const room=snap.val();
     totalPairs=room.totalPairs;
-    // Mazo viene como string "3,7,1..." — convertir a array
+    // Deck viene como string "3,7,1,..." — convertir a array de números
     const deck=String(room.deck).split(',').map(Number);
     document.getElementById('remaining').textContent=totalPairs;
     buildGrid(deck, onlineClick);
 
-    // AHORA sí escuchar cambios
+    // Escuchar cambios — renderBoard dibuja igual en ambos
     if(unsubOnline) unsubOnline();
     unsubOnline=dbOn('rooms/'+roomCode, snap=>{
       if(!snap.exists()) return;
       const r=snap.val();
-      if(r.status==='finished'){ showWin(true,[r.s0||0,r.s1||0]); return; }
+      if(r.status==='finished'){ showWin(true,[r.sc0||0,r.sc1||0]); return; }
       renderBoard(r);
     });
   });
 }
 
 // ══════════════════════════════════════════════
-// RENDER — idéntico para ambos jugadores
-// Usa el estado de Firebase como única fuente de verdad
+// RENDER — fuente única de verdad, igual para ambos
 // ══════════════════════════════════════════════
 function renderBoard(r){
   if(!r) return;
 
   // Stats
-  document.getElementById('score-p1').textContent=r.s0||0;
-  document.getElementById('score-p2').textContent=r.s1||0;
-  document.getElementById('moves').textContent=r.moves||0;
-  document.getElementById('remaining').textContent=totalPairs-(r.matched||0);
+  document.getElementById('score-p1').textContent = r.sc0||0;
+  document.getElementById('score-p2').textContent = r.sc1||0;
+  document.getElementById('moves').textContent = r.moves||0;
+  document.getElementById('remaining').textContent = totalPairs-(r.matched||0);
 
   // Turno
-  const cp=r.cp||1;
+  const cp = r.cp||1;
   if(cp!==currentCp){ currentCp=cp; setTheme(currentCp); }
 
-  // Estado de cartas — viene como string JSON
-  // Formato: "pos:id:state" separados por | 
-  // state: 0=boca abajo, 1=volteada, 2=emparejada p1, 3=emparejada p2
-  const cardsStr=r.cardsState||'';
-  const cardStates={};
-  if(cardsStr){
-    cardsStr.split('|').forEach(entry=>{
-      if(!entry) return;
-      const parts=entry.split(':');
-      if(parts.length>=3) cardStates[parts[0]]={id:parts[1],state:parseInt(parts[2]),by:parts[3]||'1'};
-    });
-  }
+  // Parsear estado de cartas desde string
+  const cardStates = parseCards(r.cards||'');
+  const activeCount = Object.values(cardStates).filter(s=>s.state===1).length;
+  const isMyTurn = (currentCp===myPlayer);
 
-  const activeCount=Object.values(cardStates).filter(s=>s.state===1).length;
-  const isMyTurn=(currentCp===myPlayer);
-
+  // Reconstruir cada carta
   document.querySelectorAll('.card').forEach(card=>{
-    const pos=card.dataset.pos;
-    const cs=cardStates[pos];
+    const pos = card.dataset.pos;
+    const cs = cardStates[pos];
 
-    // Resetear clases visuales primero (excepto matched ya fijada)
+    // Limpiar estado visual primero
     if(!card.classList.contains('matched')){
       card.classList.remove('flipped','wrong','blocked');
     }
 
-    if(cs){
-      if(cs.state===2||cs.state===3){
-        // Emparejada — siempre visible
-        card.classList.add('flipped','matched','by-p'+cs.by);
-        card.classList.remove('blocked');
-      } else if(cs.state===1){
-        // Volteada activa — visible para ambos
-        card.classList.add('flipped');
-        card.classList.remove('blocked');
-      }
+    if(cs && cs.state===2){
+      // Emparejada — permanente
+      card.classList.add('flipped','matched','by-p'+cs.by);
+      card.classList.remove('blocked');
+    } else if(cs && cs.state===1){
+      // Volteada activa — visible para ambos
+      card.classList.add('flipped');
+      card.classList.remove('blocked');
     }
 
-    // Bloqueo
+    // Bloquear clicks si no es mi turno o hay 2 activas
     if(!card.classList.contains('matched')){
       card.classList.toggle('blocked', !isMyTurn || activeCount>=2);
     }
@@ -687,104 +693,83 @@ function renderBoard(r){
 }
 
 // ══════════════════════════════════════════════
-// CLICK ONLINE
-// Solo escribe en Firebase — renderBoard dibuja
+// CLICK ONLINE — solo escribe en Firebase
+// renderBoard se encarga de dibujar en ambos
 // ══════════════════════════════════════════════
 function onlineClick(card){
   if(processing) return;
   if(currentCp!==myPlayer) return;
   if(card.classList.contains('blocked')||card.classList.contains('matched')||card.classList.contains('flipped')) return;
   startTimer();
-  doClick(card);
+  doOnlineClick(card);
 }
 
-async function doClick(card){
+async function doOnlineClick(card){
   if(processing) return;
-  const pos=card.dataset.pos;
-  const id=card.dataset.id;
+  const pos = card.dataset.pos;
+  const id = card.dataset.id;
 
-  // Leer estado actual
-  const snap=await dbGet('rooms/'+roomCode+'/cardsState');
-  const cardsStr=snap.val()||'';
-  const cardStates={};
-  if(cardsStr) cardsStr.split('|').forEach(entry=>{
-    if(!entry) return;
-    const parts=entry.split(':');
-    if(parts.length>=3) cardStates[parts[0]]={id:parts[1],state:parseInt(parts[2]),by:parts[3]||'1'};
-  });
-
-  const active=Object.entries(cardStates).filter(([k,s])=>s.state===1);
+  // Leer estado actual de cartas
+  const snap = await dbGet('rooms/'+roomCode+'/cards');
+  const cardStates = parseCards(snap.val()||'');
+  const active = Object.entries(cardStates).filter(([k,s])=>s.state===1);
   if(active.length>=2) return;
 
   // Agregar esta carta como volteada (state=1)
-  cardStates[pos]={id:String(id), state:1, by:String(currentCp)};
-  const newCardsStr=Object.entries(cardStates).map(([k,s])=>`${k}:${s.id}:${s.state}:${s.by}`).join('|');
+  cardStates[pos] = {id:String(id), state:1, by:currentCp};
+  const newCardsStr = serializeCards(cardStates);
 
-  // Publicar — renderBoard actualizará ambas pantallas
-  await db.ref('rooms/'+roomCode).update({cardsState: newCardsStr});
+  // Publicar — renderBoard actualizará AMBAS pantallas al mismo tiempo
+  await db.ref('rooms/'+roomCode+'/cards').set(newCardsStr);
 
   if(active.length===0) return; // primera carta, esperar segunda
 
-  // Segunda carta — resolver
+  // Segunda carta — resolver después de que ambos la vean
   processing=true;
-  const firstEntry=active[0];
-  const firstPos=firstEntry[0];
-  const firstId=firstEntry[1].id;
-  const isMatch=(firstId===String(id));
+  const first = active[0];
+  const firstPos = first[0];
+  const firstId = first[1].id;
+  const isMatch = (firstId===String(id));
 
-  // Ambos ven las cartas por 1.5s
+  // Esperar 1.5s — ambos jugadores ven las dos cartas via renderBoard
   await new Promise(res=>setTimeout(res,1500));
 
   // Leer estado actualizado
-  const roomSnap=await dbGet('rooms/'+roomCode);
-  const room=roomSnap.val();
-  const newMoves=(room.moves||0)+1;
+  const roomSnap = await dbGet('rooms/'+roomCode);
+  const room = roomSnap.val();
+  const newMoves = (room.moves||0)+1;
+  const curStates = parseCards(room.cards||'');
 
-  // Reconstruir cardStates desde Firebase
-  const curStr=room.cardsState||'';
-  const curStates={};
-  if(curStr) curStr.split('|').forEach(entry=>{
-    if(!entry) return;
-    const parts=entry.split(':');
-    if(parts.length>=3) curStates[parts[0]]={id:parts[1],state:parseInt(parts[2]),by:parts[3]||'1'};
-  });
-
+  const updates = {};
   if(isMatch){
-    // Marcar ambas como emparejadas (state=2 o 3 según jugador)
-    const mstate=currentCp===1?2:3;
-    curStates[firstPos]={id:firstId, state:mstate, by:String(currentCp)};
-    curStates[pos]={id:String(id), state:mstate, by:String(currentCp)};
-    const ns0=currentCp===1?(room.s0||0)+1:(room.s0||0);
-    const ns1=currentCp===2?(room.s1||0)+1:(room.s1||0);
-    const nm=(room.matched||0)+1;
-    const newStr=Object.entries(curStates).map(([k,s])=>`${k}:${s.id}:${s.state}:${s.by}`).join('|');
-    const updates={
-      ['rooms/'+roomCode+'/cardsState']: newStr,
-      ['rooms/'+roomCode+'/s0']: ns0,
-      ['rooms/'+roomCode+'/s1']: ns1,
-      ['rooms/'+roomCode+'/matched']: nm,
-      ['rooms/'+roomCode+'/moves']: newMoves,
-      ['rooms/'+roomCode+'/cp']: currentCp,
-    };
+    // Marcar ambas como emparejadas (state=2)
+    curStates[firstPos] = {id:firstId, state:2, by:currentCp};
+    curStates[pos] = {id:String(id), state:2, by:currentCp};
+    const newSc0 = currentCp===1?(room.sc0||0)+1:(room.sc0||0);
+    const newSc1 = currentCp===2?(room.sc1||0)+1:(room.sc1||0);
+    const nm = (room.matched||0)+1;
+    updates['rooms/'+roomCode+'/cards'] = serializeCards(curStates);
+    updates['rooms/'+roomCode+'/sc0'] = newSc0;
+    updates['rooms/'+roomCode+'/sc1'] = newSc1;
+    updates['rooms/'+roomCode+'/matched'] = nm;
+    updates['rooms/'+roomCode+'/moves'] = newMoves;
+    updates['rooms/'+roomCode+'/cp'] = currentCp;
     if(nm===totalPairs) updates['rooms/'+roomCode+'/status']='finished';
-    await dbUpdate(updates);
   } else {
-    // Voltear boca abajo — quitar ambas del estado
+    // Quitar ambas — Firebase las borrará y renderBoard las ocultará
     delete curStates[firstPos];
     delete curStates[pos];
-    const newStr=Object.entries(curStates).map(([k,s])=>`${k}:${s.id}:${s.state}:${s.by}`).join('|');
-    await dbUpdate({
-      ['rooms/'+roomCode+'/cardsState']: newStr||'',
-      ['rooms/'+roomCode+'/moves']: newMoves,
-      ['rooms/'+roomCode+'/cp']: currentCp===1?2:1,
-    });
+    updates['rooms/'+roomCode+'/cards'] = serializeCards(curStates)||'';
+    updates['rooms/'+roomCode+'/moves'] = newMoves;
+    updates['rooms/'+roomCode+'/cp'] = currentCp===1?2:1;
   }
 
-  try{ /* nada */ } finally{ processing=false; }
+  try{ await dbUpdate(updates); }
+  finally{ processing=false; }
 }
 
 // ══════════════════════════════════════════════
-// UTILS
+// UTILIDADES
 // ══════════════════════════════════════════════
 function shuffle(a){ const b=[...a]; for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];} return b; }
 
@@ -795,7 +780,7 @@ function buildGrid(deck, clickFn){
     const c=document.createElement('div');
     c.className='card';
     c.dataset.id=String(imgIdx);
-    c.dataset.pos=String(pos); // simple número como string
+    c.dataset.pos=String(pos);
     c.innerHTML=`<div class="card-face card-back">FLIA<br>MQZ</div><div class="card-face card-front"><img src="${IMAGES[imgIdx]}" loading="lazy"/></div>`;
     c.addEventListener('click',()=>clickFn(c));
     grid.appendChild(c);
@@ -867,7 +852,11 @@ if(_sala&&_sala.length===4){
   document.getElementById('roomCodeDisplay').textContent=_code;
   document.getElementById('waitStatus').textContent='🔗 Uniéndose...';
   document.getElementById('waShareBtn').style.display='none';
-  function tryJ(n){ joinRoom(_code).then(()=>window.history.replaceState({},'',location.pathname)).catch(()=>{ if(n>0)setTimeout(()=>tryJ(n-1),700); else{document.getElementById('waitStatus').textContent='❌ Sala no encontrada.';setTimeout(()=>showScreen('homeScreen'),2500);} }); }
+  function tryJ(n){
+    joinRoom(_code)
+      .then(()=>window.history.replaceState({},'',location.pathname))
+      .catch(()=>{ if(n>0)setTimeout(()=>tryJ(n-1),700); else{document.getElementById('waitStatus').textContent='❌ Sala no encontrada.';setTimeout(()=>showScreen('homeScreen'),2500);} });
+  }
   setTimeout(()=>tryJ(5),800);
 }
 </script>
