@@ -662,7 +662,12 @@ function renderBoard(r){
   if(newCp!==currentCp){ currentCp=newCp; setTheme(currentCp); }
 
   // Reconstruir estado de cada carta
-  const fc=r.cards||{};
+  // IMPORTANTE: Firebase puede devolver arrays si las claves son numéricas
+  // Normalizamos siempre a objeto con claves string
+  const rawFc = r.cards || {};
+  const fc = Array.isArray(rawFc)
+    ? Object.fromEntries(rawFc.map((v,i)=>['c'+i,v]).filter(([,v])=>v!=null))
+    : rawFc;
   const activeCount=Object.values(fc).filter(s=>s&&s.flipped&&!s.matched).length;
   const isMyTurn=(currentCp===myPlayer);
 
@@ -709,7 +714,11 @@ async function doOnlineClick(card){
   // Leer cartas activas
   const snap=await dbGet(`rooms/${roomCode}/cards`);
   const fc=snap.val()||{};
-  const active=Object.entries(fc)
+  // fc puede ser array o objeto según Firebase — normalizar siempre a objeto con claves string
+  const fcNorm = Array.isArray(fc)
+    ? Object.fromEntries(fc.map((v,i)=>['c'+i, v]).filter(([,v])=>v))
+    : fc;
+  const active=Object.entries(fcNorm)
     .filter(([k,s])=>s&&s.flipped&&!s.matched)
     .map(([k,s])=>({pos:String(k), id:String(s.id)}));
 
@@ -771,7 +780,7 @@ function buildGrid(deck, clickHandler){
     const c=document.createElement('div');
     c.className='card';
     c.dataset.id=String(imgIdx);
-    c.dataset.pos=String(pos);
+    c.dataset.pos='c'+String(pos); // prefijo 'c' para evitar que Firebase lo convierta a array
     c.innerHTML=`<div class="card-face card-back">FLIA<br>MQZ</div><div class="card-face card-front"><img src="${IMAGES[imgIdx]}" loading="lazy"/></div>`;
     c.addEventListener('click',()=>clickHandler(c));
     grid.appendChild(c);
