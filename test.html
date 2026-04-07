@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"/><title>Test Firebase</title></head>
+<body style="font-family:monospace;padding:20px;background:#111;color:#0f0">
+<h2>🔬 Test Firebase Online</h2>
+<div id="log" style="white-space:pre-line;font-size:12px"></div>
+<button onclick="runTest()" style="margin:10px;padding:10px 20px;font-size:14px">▶ CORRER TEST</button>
+<button onclick="clearDB()" style="margin:10px;padding:10px 20px;font-size:14px;background:red;color:white">🗑 LIMPIAR DB</button>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+<script>
+firebase.initializeApp({
+  apiKey: "AIzaSyBd0Vuukdf2UlpzfztvgtF817UrVlsxbcU",
+  authDomain: "memoon-f804a.firebaseapp.com",
+  databaseURL: "https://memoon-f804a-default-rtdb.firebaseio.com",
+  projectId: "memoon-f804a",
+});
+const db = firebase.database();
+
+function log(msg, color='#0f0'){
+  const d = document.getElementById('log');
+  d.innerHTML += `<span style="color:${color}">${new Date().toISOString().substr(11,8)} ${msg}\n</span>`;
+}
+
+async function runTest(){
+  log('=== INICIO TEST ===', '#fff');
+  
+  // TEST 1: Escribir y leer string simple
+  log('TEST 1: string simple...');
+  await db.ref('test/str').set('hola mundo');
+  const s1 = await db.ref('test/str').get();
+  log('  Escribí: "hola mundo"');
+  log('  Leí: "' + s1.val() + '" tipo: ' + typeof s1.val());
+  
+  // TEST 2: Escribir objeto con claves numéricas
+  log('TEST 2: objeto con claves numéricas...');
+  await db.ref('test/numkeys').set({"0":{v:"a"}, "1":{v:"b"}, "2":{v:"c"}});
+  const s2 = await db.ref('test/numkeys').get();
+  const v2 = s2.val();
+  log('  Escribí: {"0":{v:"a"}, "1":{v:"b"}}');
+  log('  Leí tipo: ' + (Array.isArray(v2) ? '⚠️ ARRAY!' : '✅ Objeto'));
+  log('  Valor: ' + JSON.stringify(v2), Array.isArray(v2)?'#f00':'#0f0');
+  
+  // TEST 3: Escribir objeto con claves string no numéricas
+  log('TEST 3: objeto con claves string...');
+  await db.ref('test/strkeys').set({"c0":{v:"a"}, "c1":{v:"b"}, "c2":{v:"c"}});
+  const s3 = await db.ref('test/strkeys').get();
+  const v3 = s3.val();
+  log('  Escribí: {"c0":{v:"a"}, "c1":{v:"b"}}');
+  log('  Leí tipo: ' + (Array.isArray(v3) ? '⚠️ ARRAY!' : '✅ Objeto'));
+  log('  Valor: ' + JSON.stringify(v3), Array.isArray(v3)?'#f00':'#0f0');
+
+  // TEST 4: Escribir cardsState como string pipe
+  log('TEST 4: cardsState como string pipe...');
+  const cardsState = "0:5:1:1|3:2:1:1";
+  await db.ref('test/cardsState').set(cardsState);
+  const s4 = await db.ref('test/cardsState').get();
+  log('  Escribí: "' + cardsState + '"');
+  log('  Leí: "' + s4.val() + '"');
+  log('  Iguales: ' + (cardsState === s4.val() ? '✅ SÍ' : '❌ NO'), cardsState===s4.val()?'#0f0':'#f00');
+
+  // TEST 5: Listener en tiempo real
+  log('TEST 5: listener onValue...');
+  let count = 0;
+  const unsub = db.ref('test/live').on('value', snap => {
+    count++;
+    log('  Listener recibió (#'+count+'): ' + JSON.stringify(snap.val()), '#ff0');
+  });
+  await db.ref('test/live').set({msg:'primero', n:1});
+  await new Promise(r=>setTimeout(r,500));
+  await db.ref('test/live').set({msg:'segundo', n:2});
+  await new Promise(r=>setTimeout(r,500));
+  await db.ref('test/live').set({msg:'tercero', n:3});
+  await new Promise(r=>setTimeout(r,500));
+  db.ref('test/live').off('value', unsub);
+  log('  Total actualizaciones recibidas: ' + count + (count>=3?' ✅':' ❌'), count>=3?'#0f0':'#f00');
+
+  log('=== FIN TEST ===', '#fff');
+}
+
+function clearDB(){
+  db.ref('test').remove().then(()=>log('DB limpiada ✅'));
+}
+</script>
+</body>
+</html>
