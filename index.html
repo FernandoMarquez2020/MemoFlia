@@ -331,6 +331,7 @@
   <!-- ══ JUEGO ══ -->
   <div id="gameScreen" style="display:none; width:100%;">
     <div id="onlineBadge" class="online-badge" style="display:none;">🌐 ONLINE · EN VIVO</div>
+<div id="debugBox" style="display:none;position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.9);color:#0f0;font-size:9px;font-family:monospace;padding:4px;max-height:80px;overflow-y:auto;z-index:9999;"></div>
 
     <div class="players" id="playersPanel">
       <div class="player-card p1 active" id="card-p1">
@@ -647,8 +648,17 @@ function launchOnlineGame(){
 // ══════════════════════════════════════════════
 // RENDER — fuente única de verdad, igual para ambos
 // ══════════════════════════════════════════════
+function dbg(msg){
+  const box = document.getElementById('debugBox');
+  if(!box) return;
+  box.style.display='block';
+  const t = new Date().toISOString().substr(11,8);
+  box.innerHTML = '<span style="color:#ff0">'+t+' '+msg+'</span><br>' + box.innerHTML;
+}
+
 function renderBoard(r){
   if(!r) return;
+  dbg('renderBoard cp='+r.cp+' cards="'+(r.cards||'')+'";
 
   // Stats
   document.getElementById('score-p1').textContent = r.sc0||0;
@@ -669,6 +679,7 @@ function renderBoard(r){
   document.querySelectorAll('.card').forEach(card=>{
     const pos = card.dataset.pos;
     const cs = cardStates[pos];
+    if(cs) dbg('carta pos='+pos+' state='+cs.state+' id='+cs.id);
 
     // Limpiar estado visual primero
     if(!card.classList.contains('matched')){
@@ -697,6 +708,7 @@ function renderBoard(r){
 // renderBoard se encarga de dibujar en ambos
 // ══════════════════════════════════════════════
 function onlineClick(card){
+  dbg('click! processing='+processing+' cp='+currentCp+' myP='+myPlayer+' blocked='+card.classList.contains('blocked'));
   if(processing) return;
   if(currentCp!==myPlayer) return;
   if(card.classList.contains('blocked')||card.classList.contains('matched')||card.classList.contains('flipped')) return;
