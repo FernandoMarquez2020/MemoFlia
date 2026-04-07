@@ -604,48 +604,41 @@ function launchOnlineGame() {
     if(!snap.exists()) return;
     const r = snap.val();
     if(r.status==='finished') { showWinFromState(r); return; }
-    // Sincronizar estado
     syncState(r);
   });
 }
 
+// Flag global para saber si estamos escribiendo en Firebase
+let writingToFirebase = false;
+
 function syncState(r) {
-  // Actualizar stats
+  // Marcadores
   if(r.scores) {
+    scores = r.scores;
     document.getElementById('score-p1').textContent = r.scores[0];
     document.getElementById('score-p2').textContent = r.scores[1];
-    scores = r.scores;
   }
-  if(r.moves !== undefined) {
-    moves = r.moves;
-    document.getElementById('moves').textContent = moves;
-  }
-  if(r.matched !== undefined) {
-    matched = r.matched;
-    document.getElementById('remaining').textContent = totalPairs - matched;
-  }
+  if(r.moves !== undefined) { moves = r.moves; document.getElementById('moves').textContent = moves; }
+  if(r.matched !== undefined) { matched = r.matched; document.getElementById('remaining').textContent = totalPairs - matched; }
 
   // Turno
   const newCp = r.cp || 1;
-  if(newCp !== cp) {
-    cp = newCp;
-    setTheme(cp);
-  }
+  if(newCp !== cp) { cp = newCp; setTheme(cp); }
 
-  // Reconstruir tablero — misma vista para ambos jugadores
+  // === RECONSTRUIR TABLERO DESDE FIREBASE ===
+  // Misma vista para ambos. Iteramos por dataset.pos (string)
   const fireCards = r.cards || {};
 
   document.querySelectorAll('.card').forEach(card => {
-    const pos = card.dataset.pos;
-    const state = fireCards[pos];
+    const pos = card.dataset.pos; // "0","1","2"...
+    const s = fireCards[pos];
 
-    if(state && state.matched) {
-      card.classList.add('flipped','matched','by-p'+state.by);
+    if(s && s.matched) {
+      card.classList.add('flipped','matched','by-p'+s.by);
       card.classList.remove('wrong','blocked');
-    } else if(state && state.flipped) {
+    } else if(s && s.flipped) {
       card.classList.add('flipped');
-      card.classList.remove('wrong','matched');
-      card.classList.remove('blocked');
+      card.classList.remove('wrong','matched','blocked');
     } else {
       if(!card.classList.contains('matched')) {
         card.classList.remove('flipped','wrong');
@@ -653,12 +646,11 @@ function syncState(r) {
     }
   });
 
-  // Bloquear según turno — SOLO afecta a clickear, no a la visualización
+  // Bloquear: solo el jugador de turno puede clickear, y solo si hay < 2 activas
   const isMyTurn = (cp === myPlayer);
   const activeCount = Object.values(fireCards).filter(s => s && s.flipped && !s.matched).length;
   document.querySelectorAll('.card').forEach(card => {
     if(card.classList.contains('matched')) return;
-    // Bloquear si no es mi turno O si hay 2 cartas activas (esperando resolución)
     card.classList.toggle('blocked', !isMyTurn || activeCount >= 2);
   });
 }
@@ -673,7 +665,6 @@ function launchGame() {
   document.getElementById('device-p2').textContent='';
   document.getElementById('btnRestart').style.display='';
   document.getElementById('btnWinRestart').style.display='';
-
   cp=1; scores=[0,0]; moves=0; matched=0;
   secs=0; started=false; flipped=[]; locked=false;
   document.getElementById('score-p1').textContent='0';
@@ -681,7 +672,6 @@ function launchGame() {
   document.getElementById('moves').textContent='0';
   document.getElementById('timer').textContent='0:00';
   document.getElementById('remaining').textContent=totalPairs;
-
   const panel=document.getElementById('playersPanel');
   const p2=document.getElementById('card-p2');
   if(mode==='1p') {
@@ -690,17 +680,14 @@ function launchGame() {
   } else {
     panel.classList.remove('solo'); p2.style.display='';
   }
-
   showScreen('__none__');
   document.getElementById('gameScreen').style.display='block';
   setTheme(1);
-
   const pool=shuffleArr([...Array(18).keys()]).slice(0,totalPairs);
   const deck=shuffleArr(pool.flatMap(i=>[i,i]));
   buildGrid(deck);
 }
 
-// ── GRID ──
 function shuffleArr(a) {
   const b=[...a];
   for(let i=b.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [b[i],b[j]]=[b[j],b[i]]; }
@@ -712,14 +699,13 @@ function buildGrid(deck) {
   grid.className='grid cols6';
   deck.forEach((imgIdx,pos) => {
     const c=document.createElement('div');
-    c.className='card'; c.dataset.id=imgIdx; c.dataset.pos=pos;
+    c.className='card'; c.dataset.id=String(imgIdx); c.dataset.pos=String(pos);
     c.innerHTML=`<div class="card-face card-back">FLIA<br>MQZ</div><div class="card-face card-front"><img src="${IMAGES[imgIdx]}" loading="lazy"/></div>`;
     c.addEventListener('click', ()=>onCardClick(c));
     grid.appendChild(c);
   });
 }
 
-// ── TIMER / TEMA ──
 function startTimer() {
   if(started) return; started=true;
   tiv=setInterval(()=>{ secs++; document.getElementById('timer').textContent=fmt(secs); },1000);
@@ -743,7 +729,6 @@ function setTheme(p) {
 // ── CLICK ──
 function onCardClick(card) {
   if(card.classList.contains('flipped') || card.classList.contains('matched') || card.classList.contains('blocked')) return;
-
   if(isOnline) {
     if(cp !== myPlayer) return;
     startTimer();
@@ -754,96 +739,95 @@ function onCardClick(card) {
     card.classList.add('flipped');
     flipped.push(card);
     if(flipped.length === 2) {
-      locked = true;
-      moves++;
-      document.getElementById('moves').textContent = moves;
+      locked=true; moves++;
+      document.getElementById('moves').textContent=moves;
       checkMatch();
     }
   }
 }
 
-// ── ONLINE: el jugador activo escribe en Firebase ──
+// ── ONLINE ──
 let onlineProcessing = false;
 
 async function clickOnline(card) {
   if(onlineProcessing) return;
 
-  const pos = String(card.dataset.pos);
-  const id  = String(card.dataset.id);
+  const pos = card.dataset.pos;
+  const id  = card.dataset.id;
 
-  // Leer cartas activas
+  // Leer estado actual de Firebase
   const snap = await get(ref(db, `rooms/${roomCode}/cards`));
   const fireCards = snap.val() || {};
 
-  const activeFlipped = Object.entries(fireCards)
+  // Cartas activas (volteadas, no emparejadas)
+  const active = Object.entries(fireCards)
     .filter(([k,s]) => s && s.flipped && !s.matched)
-    .map(([k,s]) => ({ pos: String(k), id: String(s.id) }));
+    .map(([k,s]) => ({ pos:String(k), id:String(s.id) }));
 
-  if(activeFlipped.length >= 2) return;
+  // Si ya hay 2 activas, ignorar click
+  if(active.length >= 2) return;
 
-  // Publicar primera o segunda carta
-  await update(ref(db, `rooms/${roomCode}/cards/${pos}`), { flipped: true, id });
+  // Escribir en Firebase — syncState actualizará AMBOS dispositivos
+  writingToFirebase = true;
+  await update(ref(db, `rooms/${roomCode}/cards/${pos}`), { flipped:true, id });
+  writingToFirebase = false;
 
-  if(activeFlipped.length === 0) return; // esperar segunda carta
+  // Si esta es la primera carta, esperar la segunda
+  if(active.length === 0) return;
 
-  // Es la segunda carta — resolver
+  // Segunda carta — resolver después de que ambos la vean
   onlineProcessing = true;
-  const first = activeFlipped[0];
+  const first = active[0];
   const isMatch = (first.id === id);
   moves++;
 
-  // Ambos ven las dos cartas por 1.2s
   await new Promise(res => setTimeout(res, 1200));
 
   const updates = {};
   if(isMatch) {
-    const newScores = [...scores]; newScores[cp-1]++;
-    const newMatched = matched + 1;
+    const ns = [...scores]; ns[cp-1]++;
+    const nm = matched + 1;
     updates[`rooms/${roomCode}/cards/${first.pos}`] = { matched:true, by:cp, id:first.id };
     updates[`rooms/${roomCode}/cards/${pos}`]        = { matched:true, by:cp, id };
-    updates[`rooms/${roomCode}/scores`]  = newScores;
-    updates[`rooms/${roomCode}/matched`] = newMatched;
+    updates[`rooms/${roomCode}/scores`]  = ns;
+    updates[`rooms/${roomCode}/matched`] = nm;
     updates[`rooms/${roomCode}/moves`]   = moves;
     updates[`rooms/${roomCode}/cp`]      = cp;
-    if(newMatched === totalPairs) updates[`rooms/${roomCode}/status`] = 'finished';
+    if(nm === totalPairs) updates[`rooms/${roomCode}/status`] = 'finished';
   } else {
     updates[`rooms/${roomCode}/cards/${first.pos}`] = null;
     updates[`rooms/${roomCode}/cards/${pos}`]        = null;
     updates[`rooms/${roomCode}/moves`] = moves;
-    updates[`rooms/${roomCode}/cp`]    = cp === 1 ? 2 : 1;
+    updates[`rooms/${roomCode}/cp`]    = cp===1 ? 2 : 1;
   }
 
-  try {
-    await update(ref(db), updates);
-  } finally {
-    onlineProcessing = false;
-  }
+  writingToFirebase = true;
+  try { await update(ref(db), updates); }
+  finally { writingToFirebase = false; onlineProcessing = false; }
 }
 
-// ── LOCAL: checkMatch ──
+// ── LOCAL checkMatch ──
 function checkMatch() {
-  const [a, b] = flipped;
-  const isMatch = (a.dataset.id === b.dataset.id);
-
-  if(isMatch) {
-    setTimeout(() => {
+  const [a,b] = flipped;
+  if(a.dataset.id === b.dataset.id) {
+    setTimeout(()=>{
       a.classList.add('matched','by-p'+cp);
       b.classList.add('matched','by-p'+cp);
-      if(mode !== '1p') scores[cp-1]++;
+      if(mode!=='1p') scores[cp-1]++;
       matched++;
-      if(mode !== '1p') document.getElementById('score-p'+cp).textContent = scores[cp-1];
-      document.getElementById('remaining').textContent = totalPairs - matched;
-      flipped = []; locked = false;
-      if(matched === totalPairs) setTimeout(showWin, 500);
-    }, 600);
+      if(mode!=='1p') document.getElementById('score-p'+cp).textContent=scores[cp-1];
+      document.getElementById('remaining').textContent=totalPairs-matched;
+      flipped=[]; locked=false;
+      if(matched===totalPairs) setTimeout(showWin,500);
+    },600);
   } else {
     a.classList.add('wrong'); b.classList.add('wrong');
-    setTimeout(() => {
+    setTimeout(()=>{
       a.classList.remove('flipped','wrong');
       b.classList.remove('flipped','wrong');
-      flipped = []; locked = false;
-      if(mode !== '1p') { cp = cp===1?2:1; setTheme(cp); }
-    }, 1000);
+      flipped=[]; locked=false;
+      if(mode!=='1p'){ cp=cp===1?2:1; setTheme(cp); }
+    },1000);
   }
 }
 
