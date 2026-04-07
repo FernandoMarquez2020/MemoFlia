@@ -623,46 +623,33 @@ function syncState(r) {
   const newCp = r.cp || 1;
   if(newCp !== cp) { cp = newCp; setTheme(cp); }
 
-  // ── Reconstruir tablero COMPLETO igual para AMBOS jugadores ──
-  const allCards = document.querySelectorAll('.card');
+  // ── Reconstruir tablero completo — CLAVE: usar dataset.pos, no índice DOM ──
   const fireCards = r.cards || {};
-
-  // Contar cuántas cartas están actualmente volteadas sin emparejar
   const flippedActive = Object.values(fireCards).filter(s => s && s.flipped && !s.matched).length;
   const isMyTurn = (cp === myPlayer);
 
-  allCards.forEach((card, pos) => {
-    const state = fireCards[pos];
+  // Iterar por cada carta usando su dataset.pos como clave
+  document.querySelectorAll('.card').forEach(card => {
+    const pos = card.dataset.pos; // string, ej: "0","1","2"...
+    const state = fireCards[pos]; // buscar por clave string
 
-    if(!state) {
-      // Sin estado en Firebase → boca abajo
-      card.classList.remove('flipped','wrong','blocked');
-      return;
-    }
-
-    if(state.matched) {
-      // Pareja: siempre visible, nunca bloqueada
-      if(!card.classList.contains('matched')) {
-        card.classList.add('flipped','matched','by-p'+state.by);
-      }
+    if(state && state.matched) {
+      card.classList.add('flipped','matched','by-p'+state.by);
       card.classList.remove('wrong','blocked');
-      return;
-    }
-
-    if(state.flipped) {
-      // Volteada activa: visible para ambos
+    } else if(state && state.flipped) {
       card.classList.add('flipped');
-      card.classList.remove('wrong','blocked');
+      card.classList.remove('wrong','blocked','matched');
+    } else {
+      // Boca abajo: quitar flipped SOLO si no está emparejada
+      if(!card.classList.contains('matched')) {
+        card.classList.remove('flipped','wrong');
+      }
     }
-  });
 
-  // Bloquear todas las cartas no emparejadas si:
-  // - No es mi turno
-  // - Ya hay 2 cartas volteadas esperando resolución
-  allCards.forEach(card => {
-    if(card.classList.contains('matched')) return;
-    const shouldBlock = !isMyTurn || flippedActive >= 2;
-    card.classList.toggle('blocked', shouldBlock);
+    // Bloqueo: no es mi turno O ya hay 2 cartas activas
+    if(!card.classList.contains('matched')) {
+      card.classList.toggle('blocked', !isMyTurn || flippedActive >= 2);
+    }
   });
 }
 
@@ -779,9 +766,10 @@ async function clickOnline(card) {
   const fireCards = snap.val() || {};
 
   // Cartas actualmente volteadas (no emparejadas)
+  // IMPORTANTE: usar claves como string igual que dataset.pos
   const activeFlipped = Object.entries(fireCards)
     .filter(([k,s]) => s && s.flipped && !s.matched)
-    .map(([k,s]) => ({ pos: k, id: String(s.id) }));
+    .map(([k,s]) => ({ pos: String(k), id: String(s.id) }));
 
   if(activeFlipped.length >= 2) return; // esperar resolución
 
@@ -830,8 +818,11 @@ async function clickOnline(card) {
     updates[`rooms/${roomCode}/cp`]     = cp === 1 ? 2 : 1;
   }
 
-  await update(ref(db), updates);
-  onlineProcessing = false;
+  try {
+    await update(ref(db), updates);
+  } finally {
+    onlineProcessing = false;
+  }
 }
 
 function checkMatch() {
