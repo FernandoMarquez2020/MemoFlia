@@ -623,41 +623,46 @@ function syncState(r) {
   const newCp = r.cp || 1;
   if(newCp !== cp) { cp = newCp; setTheme(cp); }
 
-  // ── Reconstruir tablero completo desde Firebase (fuente única de verdad) ──
+  // ── Reconstruir tablero COMPLETO igual para AMBOS jugadores ──
   const allCards = document.querySelectorAll('.card');
   const fireCards = r.cards || {};
+
+  // Contar cuántas cartas están actualmente volteadas sin emparejar
+  const flippedActive = Object.values(fireCards).filter(s => s && s.flipped && !s.matched).length;
+  const isMyTurn = (cp === myPlayer);
 
   allCards.forEach((card, pos) => {
     const state = fireCards[pos];
 
     if(!state) {
-      // Carta sin estado = boca abajo
-      if(!card.classList.contains('matched')) {
-        card.classList.remove('flipped','wrong','blocked');
-      }
+      // Sin estado en Firebase → boca abajo
+      card.classList.remove('flipped','wrong','blocked');
       return;
     }
 
     if(state.matched) {
-      card.classList.add('flipped','matched','by-p'+state.by);
+      // Pareja: siempre visible, nunca bloqueada
+      if(!card.classList.contains('matched')) {
+        card.classList.add('flipped','matched','by-p'+state.by);
+      }
       card.classList.remove('wrong','blocked');
       return;
     }
 
     if(state.flipped) {
-      // Visible para AMBOS jugadores
+      // Volteada activa: visible para ambos
       card.classList.add('flipped');
       card.classList.remove('wrong','blocked');
     }
   });
 
-  // ── Solo el jugador de turno puede clickear ──
-  const isMyTurn = (cp === myPlayer);
-  allCards.forEach(c => {
-    if(c.classList.contains('matched')) return;
-    // Bloquear si no es mi turno O si ya hay 2 cartas volteadas
-    const flippedCount = Object.values(fireCards).filter(s => s && s.flipped && !s.matched).length;
-    c.classList.toggle('blocked', !isMyTurn || flippedCount >= 2);
+  // Bloquear todas las cartas no emparejadas si:
+  // - No es mi turno
+  // - Ya hay 2 cartas volteadas esperando resolución
+  allCards.forEach(card => {
+    if(card.classList.contains('matched')) return;
+    const shouldBlock = !isMyTurn || flippedActive >= 2;
+    card.classList.toggle('blocked', shouldBlock);
   });
 }
 
@@ -743,32 +748,12 @@ function onCardClick(card) {
   if(card.classList.contains('flipped') || card.classList.contains('matched') || card.classList.contains('blocked')) return;
 
   if(isOnline) {
-    // MODO ONLINE: solo escribir en Firebase, syncState se encarga del visual
+    // ONLINE: solo el jugador de turno escribe en Firebase
     if(cp !== myPlayer) return;
     startTimer();
-
-    // Contar cuántas cartas están volteadas sin emparejar
-    get(ref(db, `rooms/${roomCode}/cards`)).then(snap => {
-      const cards = snap.val() || {};
-      const flippedNow = Object.values(cards).filter(s => s && s.flipped && !s.matched);
-      if(flippedNow.length >= 2) return; // ya hay 2 volteadas, esperar
-
-      update(ref(db, `rooms/${roomCode}/cards/${card.dataset.pos}`), {
-        flipped: true,
-        id: String(card.dataset.id)
-      });
-
-      // Si ya había 1 volteada, esta es la segunda → evaluar
-      if(flippedNow.length === 1) {
-        moves++;
-        const firstCard = flippedNow[0];
-        const isMatch = (firstCard.id === String(card.dataset.id));
-        setTimeout(() => resolveOnline(isMatch, firstCard, card), 900);
-      }
-    });
-
+    clickOnline(card);
   } else {
-    // MODO LOCAL
+    // LOCAL
     if(locked) return;
     startTimer();
     card.classList.add('flipped');
@@ -782,46 +767,71 @@ function onCardClick(card) {
   }
 }
 
-// ── RESOLVER ONLINE: el jugador activo decide el resultado y lo publica ──
-async function resolveOnline(isMatch, firstState, secondCard) {
+// ── LÓGICA ONLINE COMPLETA ──
+// Solo el jugador activo llama esto. Escribe en Firebase.
+// syncState se encarga de renderizar en AMBOS dispositivos.
+let onlineProcessing = false;
+
+async function clickOnline(card) {
+  if(onlineProcessing) return;
+
   const snap = await get(ref(db, `rooms/${roomCode}/cards`));
-  const allStates = snap.val() || {};
+  const fireCards = snap.val() || {};
 
-  // Encontrar la posición de la primera carta
-  const firstPos = Object.keys(allStates).find(k =>
-    allStates[k] && allStates[k].flipped && !allStates[k].matched &&
-    String(allStates[k].id) === String(firstState.id) &&
-    String(k) !== String(secondCard.dataset.pos)
-  );
+  // Cartas actualmente volteadas (no emparejadas)
+  const activeFlipped = Object.entries(fireCards)
+    .filter(([k,s]) => s && s.flipped && !s.matched)
+    .map(([k,s]) => ({ pos: k, id: String(s.id) }));
 
-  if(!firstPos) return;
+  if(activeFlipped.length >= 2) return; // esperar resolución
 
+  const thisId = String(card.dataset.id);
+  const thisPos = String(card.dataset.pos);
+
+  // Publicar esta carta → ambos la ven via syncState
+  await update(ref(db, `rooms/${roomCode}/cards/${thisPos}`), {
+    flipped: true, id: thisId
+  });
+
+  if(activeFlipped.length === 0) {
+    // Primera carta — esperar la segunda
+    return;
+  }
+
+  // Segunda carta — evaluar
+  onlineProcessing = true;
+  const firstCard = activeFlipped[0];
+  const isMatch = (firstCard.id === thisId);
+  moves++;
+
+  // Esperar 1.2s para que ambos vean las dos cartas
+  await new Promise(r => setTimeout(r, 1200));
+
+  const updates = {};
   if(isMatch) {
-    // ── PAREJA ──
-    const newMatched = matched + 1;
+    // PAREJA: marcar ambas como emparejadas
     const newScores = [...scores];
     newScores[cp-1]++;
+    const newMatched = matched + 1;
 
-    const updates = {};
-    updates[`rooms/${roomCode}/cards/${firstPos}`]           = {matched:true, by:cp, id:String(firstState.id)};
-    updates[`rooms/${roomCode}/cards/${secondCard.dataset.pos}`] = {matched:true, by:cp, id:String(secondCard.dataset.id)};
-    updates[`rooms/${roomCode}/scores`]  = newScores;
-    updates[`rooms/${roomCode}/matched`] = newMatched;
-    updates[`rooms/${roomCode}/moves`]   = moves;
-    updates[`rooms/${roomCode}/cp`]      = cp; // sigue el mismo
+    updates[`rooms/${roomCode}/cards/${firstCard.pos}`]  = { matched: true, by: cp, id: firstCard.id };
+    updates[`rooms/${roomCode}/cards/${thisPos}`]         = { matched: true, by: cp, id: thisId };
+    updates[`rooms/${roomCode}/scores`]   = newScores;
+    updates[`rooms/${roomCode}/matched`]  = newMatched;
+    updates[`rooms/${roomCode}/moves`]    = moves;
+    updates[`rooms/${roomCode}/cp`]       = cp; // mismo jugador sigue
     if(newMatched === totalPairs) updates[`rooms/${roomCode}/status`] = 'finished';
-    await update(ref(db), updates);
 
   } else {
-    // ── NO PAREJA: dejar visibles 1s más y luego voltear ──
-    await new Promise(r => setTimeout(r, 1000));
-    const updates = {};
-    updates[`rooms/${roomCode}/cards/${firstPos}`]           = null;
-    updates[`rooms/${roomCode}/cards/${secondCard.dataset.pos}`] = null;
-    updates[`rooms/${roomCode}/moves`]   = moves;
-    updates[`rooms/${roomCode}/cp`]      = cp === 1 ? 2 : 1;
-    await update(ref(db), updates);
+    // NO PAREJA: eliminar ambas → syncState las oculta en los dos
+    updates[`rooms/${roomCode}/cards/${firstCard.pos}`]  = null;
+    updates[`rooms/${roomCode}/cards/${thisPos}`]         = null;
+    updates[`rooms/${roomCode}/moves`]  = moves;
+    updates[`rooms/${roomCode}/cp`]     = cp === 1 ? 2 : 1;
   }
+
+  await update(ref(db), updates);
+  onlineProcessing = false;
 }
 
 function checkMatch() {
@@ -830,8 +840,8 @@ function checkMatch() {
 
   if(isMatch) {
     setTimeout(() => {
-      a.classList.add('matched', 'by-p'+cp);
-      b.classList.add('matched', 'by-p'+cp);
+      a.classList.add('matched','by-p'+cp);
+      b.classList.add('matched','by-p'+cp);
       if(mode !== '1p') scores[cp-1]++;
       matched++;
       if(mode !== '1p') document.getElementById('score-p'+cp).textContent = scores[cp-1];
