@@ -458,12 +458,9 @@ window.showScreen=showScreen;
 
 window.selMode=function(m){
   mode=m;
-  document.getElementById('btn1p').classList.toggle('sel-white',m==='1p');
-  document.getElementById('btn2p').classList.toggle('sel-white',m==='2p');
-  document.getElementById('btnOnline').classList.toggle('sel-blue',m==='online');
-  document.getElementById('btn1p').classList.toggle('sel-white',false);
-  document.getElementById('btn2p').classList.toggle('sel-white',false);
-  document.getElementById('btnOnline').classList.toggle('sel-blue',false);
+  document.getElementById('btn1p').classList.remove('sel-white','sel-blue');
+  document.getElementById('btn2p').classList.remove('sel-white','sel-blue');
+  document.getElementById('btnOnline').classList.remove('sel-white','sel-blue');
   if(m==='1p') document.getElementById('btn1p').classList.add('sel-white');
   else if(m==='2p') document.getElementById('btn2p').classList.add('sel-white');
   else document.getElementById('btnOnline').classList.add('sel-blue');
